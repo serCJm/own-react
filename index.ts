@@ -32,8 +32,19 @@ function createTextElement(text: string | number): object {
 	};
 }
 
-function render(element: createdElement, container: HTMLElement) {
-	const dom = document.createElement(element.type);
+function render(element: createdElement, container: HTMLElement | Text) {
+	const dom =
+		element.type == "TEXT_ELEMENT"
+			? document.createTextNode("")
+			: document.createElement(element.type);
+
+	const isProperty = (key: string) => key !== "children";
+	Object.keys(element.props)
+		.filter(isProperty)
+		.forEach((name) => {
+			dom[name] = element.props[name];
+		});
+
 	element.props.children.forEach((child) => render(child, dom));
 	container.appendChild(dom);
 }
@@ -63,4 +74,4 @@ const element = Didact.createElement(
 // );
 
 const container = document.getElementById("root") as HTMLElement;
-// ReactDOM.render(element, container)
+Didact.render(element, container);
