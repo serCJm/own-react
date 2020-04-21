@@ -1,13 +1,21 @@
+interface createdElement {
+	type: string;
+	props: {
+		[propName: string]: any;
+		children: any[];
+	};
+}
+
 function createElement(
 	type: string,
 	props: object,
-	...children: (string | number)[]
-): object {
+	...children: (object | string | number)[]
+): createdElement {
 	return {
 		type,
 		props: {
 			...props,
-			children: children.map((child: string | number) =>
+			children: children.map((child: string | number | object) =>
 				typeof child === "object" ? child : createTextElement(child)
 			),
 		},
@@ -24,12 +32,20 @@ function createTextElement(text: string | number): object {
 	};
 }
 
+function render(element: createdElement, container: HTMLElement) {
+	const dom = document.createElement(element.type);
+	element.props.children.forEach((child) => render(child, dom));
+	container.appendChild(dom);
+}
+
 type Didact = {
 	createElement: Function;
+	render: Function;
 };
 
 const Didact: Didact = {
 	createElement,
+	render,
 };
 const element = Didact.createElement(
 	"div",
