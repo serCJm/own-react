@@ -1,10 +1,35 @@
+interface Props {
+	[propName: string]: any;
+	children: any[];
+}
+
 interface createdElement {
 	type: string;
-	props: {
-		[propName: string]: any;
-		children: any[];
-	};
+	props: Props;
 }
+
+interface createDom {
+	(fiber: createdElement): HTMLElement | Text;
+}
+
+interface Deadline {
+	didTimeout: boolean;
+	timeRemaining: Function;
+}
+
+interface Fiber {
+	type: string;
+	props: Props;
+	dom: createDom | HTMLElement | Text;
+	parent: Fiber;
+	child?: Fiber;
+	sibling?: Fiber;
+}
+
+type Didact = {
+	createElement: Function;
+	render: Function;
+};
 
 function createElement(
 	type: string,
@@ -61,7 +86,9 @@ function createTextElement(text: string | number): object {
 // If the fiber doesn’t have a child, we use the sibling as the next unit of work.
 // And if the fiber doesn’t have a child nor a sibling we go to the “uncle”: the sibling of the parent.
 
-function createDom(fiber: createdElement): HTMLElement | Text {
+let createDom: createDom;
+
+createDom = function (fiber) {
 	const dom =
 		fiber.type == "TEXT_ELEMENT"
 			? document.createTextNode("")
@@ -73,24 +100,25 @@ function createDom(fiber: createdElement): HTMLElement | Text {
 			dom[name] = fiber.props[name];
 		});
 	return dom;
-}
+};
 
-function commitRoot() {
+function commitRoot(): void {
 	// add nodes to dom
 	commitWork(wipRoot.child);
 	wipRoot = null;
 }
-function commitWork(fiber) {
+function commitWork(fiber: Fiber): void {
 	if (!fiber) {
 		return;
 	}
 	const domParent = fiber.parent.dom;
-	domParent.appendChild(fiber.dom);
+	if (domParent instanceof Node && fiber.dom instanceof Node)
+		domParent.appendChild(fiber.dom);
 	commitWork(fiber.child);
 	commitWork(fiber.sibling);
 }
 
-function render(element: createdElement, container: HTMLElement) {
+function render(element: createdElement, container: HTMLElement): void {
 	wipRoot = {
 		dom: container,
 		props: {
@@ -104,7 +132,7 @@ function render(element: createdElement, container: HTMLElement) {
 let nextUnitOfWork = null;
 let wipRoot = null;
 
-function workLoop(deadline) {
+function workLoop(deadline: Deadline): void {
 	let shouldYield = false;
 	while (nextUnitOfWork && !shouldYield) {
 		nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
@@ -120,12 +148,17 @@ function workLoop(deadline) {
 }
 (window as any).requestIdleCallback(workLoop);
 // To start using the loop we’ll need to set the first unit of work, and then write a performUnitOfWork function that not only performs the work but also returns the next unit of work.
-function performUnitOfWork(fiber) {
+
+function performUnitOfWork(fiber: Fiber): Fiber {
 	// add dom node
 	if (!fiber.dom) {
 		fiber.dom = createDom(fiber);
 	}
-	if (fiber.parent) {
+	if (
+		fiber.parent &&
+		fiber.parent.dom instanceof Node &&
+		fiber.dom instanceof Node
+	) {
 		fiber.parent.dom.appendChild(fiber.dom);
 	}
 
@@ -138,8 +171,8 @@ function performUnitOfWork(fiber) {
 		const newFiber = {
 			type: element.type,
 			props: element.props,
-			parent: fiber,
 			dom: null,
+			parent: fiber,
 		};
 		if (index === 0) {
 			fiber.child = newFiber;
@@ -163,11 +196,6 @@ function performUnitOfWork(fiber) {
 }
 
 // EXECUTION
-type Didact = {
-	createElement: Function;
-	render: Function;
-};
-
 const Didact: Didact = {
 	createElement,
 	render,
