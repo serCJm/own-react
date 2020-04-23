@@ -34,11 +34,13 @@ interface Fiber {
 	sibling?: Fiber;
 	alternate?: Fiber;
 	effectTag: EffectTag;
+	hooks?: any[];
 }
 
 type Didact = {
 	createElement: Function;
 	render: Function;
+	useState: Function;
 };
 
 function createElement(
@@ -257,11 +259,48 @@ function updateFunctionComponent(fiber: Fiber): void {
 	reconcileChildren(fiber, children);
 }
 
+let wipFiber: Fiber = null;
+let hookIndex = null;
+
 function updateHostComponent(fiber: Fiber): void {
+	wipFiber = fiber;
+	hookIndex = 0;
+	wipFiber.hooks = [];
+
 	if (!fiber.dom) {
 		fiber.dom = createDom(fiber);
 	}
 	reconcileChildren(fiber, fiber.props.children);
+}
+
+function useState(initial: any) {
+	const oldHook =
+		wipFiber.alternate &&
+		wipFiber.alternate.hooks &&
+		wipFiber.alternate.hooks[hookIndex];
+	const hook = {
+		state: oldHook ? oldHook.state : initial,
+		queue: [],
+	};
+
+	const actions = oldHook ? oldHook.queue : [];
+	actions.forEach((action) => {
+		hook.state = action(hook.state);
+	});
+
+	const setState = (action) => {
+		hook.queue.push(action);
+		wipRoot = {
+			dom: currentRoot.dom,
+			props: currentRoot.props,
+			alternate: currentRoot,
+		};
+		nextUnitOfWork = wipRoot;
+		deletions = [];
+	};
+	wipFiber.hooks.push(hook);
+	hookIndex++;
+	return [hook.state, setState];
 }
 
 function reconcileChildren(wipFiber: Fiber, elements: any[]): void {
@@ -270,17 +309,12 @@ function reconcileChildren(wipFiber: Fiber, elements: any[]): void {
 	let prevSibling = null;
 
 	while (index < elements.length || oldFiber != null) {
-		// The element is the thing we want to render to the DOM and the oldFiber is what we rendered the last time.
-		// We need to compare them to see if there’s any change we need to apply to the DOM.
 		const element = elements[index];
-
 		let newFiber = null;
 
-		// compare oldFiber to element
 		const sameType = oldFiber && element && element.type == oldFiber.type;
-		// Here React also uses keys, that makes a better reconciliation. For example, it detects when children change places in the element array.
+
 		if (sameType) {
-			// update the node
 			newFiber = {
 				type: oldFiber.type,
 				props: element.props,
@@ -291,7 +325,6 @@ function reconcileChildren(wipFiber: Fiber, elements: any[]): void {
 			};
 		}
 		if (element && !sameType) {
-			// add this node
 			newFiber = {
 				type: element.type,
 				props: element.props,
@@ -302,10 +335,22 @@ function reconcileChildren(wipFiber: Fiber, elements: any[]): void {
 			};
 		}
 		if (oldFiber && !sameType) {
-			// delete the oldFiber's node
 			oldFiber.effectTag = EffectTag.DELETION;
 			deletions.push(oldFiber);
 		}
+
+		if (oldFiber) {
+			oldFiber = oldFiber.sibling;
+		}
+
+		if (index === 0) {
+			wipFiber.child = newFiber;
+		} else if (element) {
+			prevSibling.sibling = newFiber;
+		}
+
+		prevSibling = newFiber;
+		index++;
 	}
 }
 
@@ -313,6 +358,7 @@ function reconcileChildren(wipFiber: Fiber, elements: any[]): void {
 const Didact: Didact = {
 	createElement,
 	render,
+	useState,
 };
 const element = Didact.createElement(
 	"div",
@@ -353,3 +399,16 @@ Didact.render(element, container);
 //   const element = Didact.createElement(App, {
 // 	name: "foo",
 //   })
+
+// HOOKS
+// function Counter() {
+// 	const [state, setState] = Didact.useState(1)
+// 	return (
+// 	  <h1 onClick={() => setState(c => c + 1)}>
+// 		Count: {state}
+// 	  </h1>
+// 	)
+//   }
+//   const element = <Counter />
+//   const container = document.getElementById("root")
+//   Didact.render(element, container)
