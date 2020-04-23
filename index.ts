@@ -162,7 +162,12 @@ function commitWork(fiber: Fiber) {
 	if (!fiber) {
 		return;
 	}
-	const domParent = fiber.parent.dom as HTMLElement;
+
+	let domParentFiber = fiber.parent;
+	while (!domParentFiber.dom) {
+		domParentFiber = domParentFiber.parent;
+	}
+	const domParent = domParentFiber.dom as HTMLElement;
 
 	if (
 		fiber.effectTag === EffectTag.PLACEMENT &&
@@ -176,10 +181,18 @@ function commitWork(fiber: Fiber) {
 		fiber.effectTag === EffectTag.UPDATE &&
 		fiber.dom instanceof Node
 	) {
-		domParent.removeChild(fiber.dom);
+		commitDeletion(fiber, domParent);
 	}
 	commitWork(fiber.child);
 	commitWork(fiber.sibling);
+}
+
+function commitDeletion(fiber: Fiber, domParent: Dom): void {
+	if (fiber.dom && domParent instanceof Node) {
+		domParent.removeChild(fiber.dom as HTMLElement);
+	} else {
+		commitDeletion(fiber.child, domParent);
+	}
 }
 
 function render(element: createdElement, container: HTMLElement): void {
@@ -218,21 +231,12 @@ function workLoop(deadline: Deadline): void {
 // To start using the loop we’ll need to set the first unit of work, and then write a performUnitOfWork function that not only performs the work but also returns the next unit of work.
 
 function performUnitOfWork(fiber: Fiber): Fiber {
-	// add dom node
-	if (!fiber.dom) {
-		fiber.dom = createDom(fiber);
+	const isFunctionComponent = (fiber.type as any) instanceof Function;
+	if (isFunctionComponent) {
+		updateFunctionComponent(fiber);
+	} else {
+		updateHostComponent(fiber);
 	}
-	if (
-		fiber.parent &&
-		fiber.parent.dom instanceof Node &&
-		fiber.dom instanceof Node
-	) {
-		fiber.parent.dom.appendChild(fiber.dom);
-	}
-
-	// create new fibers
-	const elements = fiber.props.children;
-	reconcileChildren(fiber, elements);
 
 	// return next unit of work
 	if (fiber.child) {
@@ -245,6 +249,19 @@ function performUnitOfWork(fiber: Fiber): Fiber {
 		}
 		nextFiber = nextFiber.parent;
 	}
+}
+
+function updateFunctionComponent(fiber: Fiber): void {
+	const funcFiber: any = fiber.type;
+	const children = [funcFiber(fiber.props)];
+	reconcileChildren(fiber, children);
+}
+
+function updateHostComponent(fiber: Fiber): void {
+	if (!fiber.dom) {
+		fiber.dom = createDom(fiber);
+	}
+	reconcileChildren(fiber, fiber.props.children);
 }
 
 function reconcileChildren(wipFiber: Fiber, elements: any[]): void {
@@ -304,6 +321,9 @@ const element = Didact.createElement(
 	Didact.createElement("b")
 );
 
+const container = document.getElementById("root") as HTMLElement;
+Didact.render(element, container);
+
 /** @jsx Didact.createElement */
 // const element:any = (
 // 	<div id="foo">
@@ -312,5 +332,24 @@ const element = Didact.createElement(
 // 	</div>
 // );
 
-const container = document.getElementById("root") as HTMLElement;
-Didact.render(element, container);
+// Functional component
+// /** @jsx Didact.createElement */
+// function App(props) {
+// 	return <h1>Hi {props.name}</h1>
+//   }
+// const element = <App name="foo" />;
+// const container = document.getElementById("root");
+// Didact.render(element, container);
+
+// In JS:
+// function App(props) {
+// 	return Didact.createElement(
+// 	  "h1",
+// 	  null,
+// 	  "Hi ",
+// 	  props.name
+// 	)
+//   }
+//   const element = Didact.createElement(App, {
+// 	name: "foo",
+//   })
